@@ -1,0 +1,19 @@
+# Entorno local
+.env
+
+# Datos persistentes de los contenedores
+data/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Sistema
+.DS_Store
+*.swp
+
+# Editores
+.vscode/
+.idea/

@@ -1,0 +1,394 @@
+# ═══════════════════════════════════════════════════════════════════════════
+# Mortgage AI Streaming Lab
+# Kafka (KRaft) + Kafka Connect + Apache Flink SQL + Agentes IA + OpenLineage/Marquez
+#
+# ⚠️  SOLO para desarrollo local / demos. Sin auth, sin TLS, sin ACLs.
+#     No exponer estos puertos a Internet ni usar en producción.
+# ═══════════════════════════════════════════════════════════════════════════
+
+networks:
+  lab-net:
+    driver: bridge
+    name: mortgage-lab-network
+
+volumes:
+  kafka-data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${DATA_DIR:-./data}/kafka-data
+  connect-plugins:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${DATA_DIR:-./data}/connect-plugins
+  postgres-mortgage-data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${DATA_DIR:-./data}/postgres-mortgage
+  marquez-db-data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${DATA_DIR:-./data}/marquez-db
+
+services:
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # Kafka Broker & Controller (KRaft, sin ZooKeeper)
+  # ─────────────────────────────────────────────────────────────────────────
+  broker:
+    image: confluentinc/cp-kafka:${CONFLUENT_VERSION:-7.6.13}
+    hostname: broker
+    container_name: broker
+    networks: [lab-net]
+    ports:
+      - "${KAFKA_EXTERNAL_PORT:-9092}:9092"
+      - "127.0.0.1:${KAFKA_JMX_PORT:-9101}:9101"
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: 'CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT'
+      KAFKA_ADVERTISED_LISTENERS: 'PLAINTEXT://broker:29092,PLAINTEXT_HOST://localhost:${KAFKA_EXTERNAL_PORT:-9092}'
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_JMX_PORT: ${KAFKA_JMX_PORT:-9101}
+      KAFKA_JMX_HOSTNAME: localhost
+      KAFKA_PROCESS_ROLES: 'broker,controller'
+      KAFKA_CONTROLLER_QUORUM_VOTERS: '1@broker:29093'
+      KAFKA_LISTENERS: 'PLAINTEXT://broker:29092,CONTROLLER://broker:29093,PLAINTEXT_HOST://0.0.0.0:9092'
+      KAFKA_INTER_BROKER_LISTENER_NAME: 'PLAINTEXT'
+      KAFKA_CONTROLLER_LISTENER_NAMES: 'CONTROLLER'
+      KAFKA_LOG_DIRS: '/var/lib/kafka/data'
+      CLUSTER_ID: 'MkU3OEVBNTcwNTJENDM2Qk'
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      KAFKA_NUM_PARTITIONS: 3
+      KAFKA_DEFAULT_REPLICATION_FACTOR: 1
+      KAFKA_MIN_INSYNC_REPLICAS: 1
+      KAFKA_LOG_RETENTION_HOURS: 168
+      KAFKA_LOG_RETENTION_BYTES: ${KAFKA_LOG_RETENTION_BYTES:-107374182400}
+      KAFKA_HEAP_OPTS: "${KAFKA_HEAP_OPTS:--Xmx1g -Xms1g}"
+      CONFLUENT_METRICS_ENABLE: 'false'
+      CONFLUENT_SUPPORT_CUSTOMER_ID: 'anonymous'
+    volumes:
+      - kafka-data:/var/lib/kafka/data:z
+    healthcheck:
+      test: ["CMD", "kafka-broker-api-versions", "--bootstrap-server", "localhost:9092"]
+      interval: 20s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: ${BROKER_MEMORY_LIMIT:-2G}
+          cpus: '${BROKER_CPU_LIMIT:-2.0}'
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # Schema Registry
+  # ─────────────────────────────────────────────────────────────────────────
+  schema-registry:
+    image: confluentinc/cp-schema-registry:${CONFLUENT_VERSION:-7.6.13}
+    hostname: schema-registry
+    container_name: schema-registry
+    depends_on:
+      broker: { condition: service_healthy }
+    networks: [lab-net]
+    ports:
+      - "${SCHEMA_REGISTRY_PORT:-8081}:8081"
+    environment:
+      SCHEMA_REGISTRY_HOST_NAME: schema-registry
+      SCHEMA_REGISTRY_KAFKASTORE_BOOTSTRAP_SERVERS: "broker:29092"
+      SCHEMA_REGISTRY_LISTENERS: http://0.0.0.0:8081
+      SCHEMA_REGISTRY_KAFKASTORE_TOPIC: _schemas
+      SCHEMA_REGISTRY_KAFKASTORE_TOPIC_REPLICATION_FACTOR: 1
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8081/subjects"]
+      interval: 20s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: ${SCHEMA_REGISTRY_MEMORY_LIMIT:-1G}
+          cpus: '1.0'
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # Kafka Connect (JDBC source de credit_scores / payment_history)
+  # ─────────────────────────────────────────────────────────────────────────
+  connect:
+    image: confluentinc/cp-kafka-connect:${CONFLUENT_VERSION:-7.6.13}
+    hostname: connect
+    container_name: connect
+    depends_on:
+      broker: { condition: service_healthy }
+      schema-registry: { condition: service_healthy }
+    networks: [lab-net]
+    ports:
+      - "${CONNECT_REST_PORT:-8083}:8083"
+    environment:
+      CONNECT_BOOTSTRAP_SERVERS: "broker:29092"
+      CONNECT_REST_ADVERTISED_HOST_NAME: connect
+      CONNECT_REST_PORT: 8083
+      CONNECT_GROUP_ID: mortgage-connect-group
+      CONNECT_CONFIG_STORAGE_TOPIC: docker-connect-configs
+      CONNECT_CONFIG_STORAGE_REPLICATION_FACTOR: 1
+      CONNECT_OFFSET_FLUSH_INTERVAL_MS: 10000
+      CONNECT_OFFSET_STORAGE_TOPIC: docker-connect-offsets
+      CONNECT_OFFSET_STORAGE_REPLICATION_FACTOR: 1
+      CONNECT_STATUS_STORAGE_TOPIC: docker-connect-status
+      CONNECT_STATUS_STORAGE_REPLICATION_FACTOR: 1
+      CONNECT_KEY_CONVERTER: org.apache.kafka.connect.storage.StringConverter
+      CONNECT_VALUE_CONVERTER: io.confluent.connect.avro.AvroConverter
+      CONNECT_VALUE_CONVERTER_SCHEMA_REGISTRY_URL: http://schema-registry:8081
+      CONNECT_PLUGIN_PATH: "/usr/share/java,/usr/share/confluent-hub-components,/opt/connect-plugins"
+      KAFKA_HEAP_OPTS: "${CONNECT_HEAP_OPTS:--Xmx1g -Xms512m}"
+      JDBC_CONNECTOR_VERSION: ${JDBC_CONNECTOR_VERSION:-10.8.0}
+    volumes:
+      - connect-plugins:/opt/connect-plugins:z
+      - ./scripts/connect-init.sh:/etc/confluent/docker/connect-init.sh:ro
+    command: ["bash", "/etc/confluent/docker/connect-init.sh"]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8083/connectors"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: ${CONNECT_MEMORY_LIMIT:-2G}
+          cpus: '2.0'
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # Postgres con los datos de crédito / historial de pagos del ejercicio
+  # ─────────────────────────────────────────────────────────────────────────
+  postgres-mortgage:
+    image: postgres:16-alpine
+    container_name: postgres-mortgage
+    networks: [lab-net]
+    ports:
+      - "${POSTGRES_MORTGAGE_PORT:-5433}:5432"
+    environment:
+      POSTGRES_DB: mortgage
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: secretpassword
+    volumes:
+      - ./sql/init-mortgage-db.sql:/docker-entrypoint-initdb.d/init.sql:ro
+      - postgres-mortgage-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # Apache Flink — JobManager / TaskManager / SQL Client
+  # Reemplaza a ksqlDB: aquí corren los joins de enriquecimiento en SQL real.
+  # ─────────────────────────────────────────────────────────────────────────
+  flink-jobmanager:
+    build: ./flink
+    image: mortgage-lab/flink:1.19.1
+    container_name: flink-jobmanager
+    hostname: flink-jobmanager
+    networks: [lab-net]
+    ports:
+      - "${FLINK_UI_PORT:-8082}:8081"
+    command: jobmanager
+    environment:
+      FLINK_PROPERTIES: |
+        jobmanager.rpc.address: flink-jobmanager
+        state.backend: rocksdb
+        execution.checkpointing.interval: 30000
+    depends_on:
+      broker: { condition: service_healthy }
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: ${FLINK_JM_MEMORY_LIMIT:-1G}
+          cpus: '1.0'
+
+  flink-taskmanager:
+    build: ./flink
+    image: mortgage-lab/flink:1.19.1
+    container_name: flink-taskmanager
+    hostname: flink-taskmanager
+    networks: [lab-net]
+    command: taskmanager
+    scale: 1
+    environment:
+      FLINK_PROPERTIES: |
+        jobmanager.rpc.address: flink-jobmanager
+        taskmanager.numberOfTaskSlots: 4
+        state.backend: rocksdb
+    depends_on:
+      - flink-jobmanager
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: ${FLINK_TM_MEMORY_LIMIT:-2G}
+          cpus: '2.0'
+
+  flink-sql-client:
+    build: ./flink
+    image: mortgage-lab/flink:1.19.1
+    container_name: flink-sql-client
+    networks: [lab-net]
+    command: ["bin/sql-client.sh"]
+    environment:
+      FLINK_PROPERTIES: |
+        jobmanager.rpc.address: flink-jobmanager
+        rest.address: flink-jobmanager
+    volumes:
+      - ./flink-sql:/opt/flink/sql-scripts:ro
+    depends_on:
+      - flink-jobmanager
+      - flink-taskmanager
+    stdin_open: true
+    tty: true
+    restart: unless-stopped
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # Kafbat UI — gestión de topics/schemas/connectors
+  # ─────────────────────────────────────────────────────────────────────────
+  kafka-ui:
+    image: kafbat/kafka-ui:latest
+    container_name: kafka-ui
+    depends_on:
+      broker: { condition: service_healthy }
+      schema-registry: { condition: service_healthy }
+      connect: { condition: service_healthy }
+    networks: [lab-net]
+    ports:
+      - "${KAFKA_UI_PORT:-8080}:8080"
+    environment:
+      KAFKA_CLUSTERS_0_NAME: Mortgage-Lab-Cluster
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: broker:29092
+      KAFKA_CLUSTERS_0_SCHEMAREGISTRY: http://schema-registry:8081
+      KAFKA_CLUSTERS_0_KAFKACONNECT_0_NAME: connect
+      KAFKA_CLUSTERS_0_KAFKACONNECT_0_ADDRESS: http://connect:8083
+      DYNAMIC_CONFIG_ENABLED: 'true'
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/actuator/health"]
+      interval: 20s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: ${KAFKA_UI_MEMORY_LIMIT:-512M}
+          cpus: '0.5'
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # OpenLineage / Marquez — backend + UI de lineage
+  # ─────────────────────────────────────────────────────────────────────────
+  marquez-db:
+    image: postgres:16-alpine
+    container_name: marquez-db
+    networks: [lab-net]
+    environment:
+      POSTGRES_USER: marquez
+      POSTGRES_PASSWORD: marquez
+      POSTGRES_DB: marquez
+    volumes:
+      - marquez-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U marquez"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  marquez:
+    image: marquezproject/marquez:${MARQUEZ_VERSION:-0.50.0}
+    container_name: marquez
+    networks: [lab-net]
+    depends_on:
+      marquez-db: { condition: service_healthy }
+    ports:
+      - "${MARQUEZ_API_PORT:-5000}:5000"
+      - "${MARQUEZ_ADMIN_PORT:-5001}:5001"
+    environment:
+      MARQUEZ_PORT: 5000
+      MARQUEZ_ADMIN_PORT: 5001
+      POSTGRES_HOST: marquez-db
+      POSTGRES_PORT: 5432
+      POSTGRES_USER: marquez
+      POSTGRES_PASSWORD: marquez
+      POSTGRES_DB: marquez
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: ${MARQUEZ_MEMORY_LIMIT:-1G}
+          cpus: '1.0'
+
+  marquez-web:
+    image: marquezproject/marquez-web:${MARQUEZ_VERSION:-0.50.0}
+    container_name: marquez-web
+    networks: [lab-net]
+    depends_on:
+      - marquez
+    ports:
+      - "${MARQUEZ_WEB_PORT:-3000}:3000"
+    environment:
+      MARQUEZ_HOST: marquez
+      MARQUEZ_PORT: 5000
+      WEB_PORT: 3000
+    restart: unless-stopped
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # Agentes de IA (riesgo y decisión), instrumentados con OpenLineage
+  # ─────────────────────────────────────────────────────────────────────────
+  ai-risk-agent:
+    build: ./agents
+    container_name: ai-risk-agent
+    networks: [lab-net]
+    depends_on:
+      broker: { condition: service_healthy }
+      marquez: { condition: service_started }
+    environment:
+      BOOTSTRAP_SERVERS: broker:29092
+      SOURCE_TOPIC: enriched_mortgage_applications
+      SINK_TOPIC: mortgage_validated_apps
+      LLM_API_BASE: ${LLM_API_BASE:-https://api.openai.com/v1}
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      LLM_MODEL: ${LLM_MODEL:-gpt-4o-mini}
+      OPENLINEAGE_URL: http://marquez:5000
+      OPENLINEAGE_NAMESPACE: mortgage-lab
+      OPENLINEAGE_JOB_NAME: risk-assessment-agent
+    command: ["python", "risk_agent.py"]
+    restart: unless-stopped
+
+  ai-decision-agent:
+    build: ./agents
+    container_name: ai-decision-agent
+    networks: [lab-net]
+    depends_on:
+      broker: { condition: service_healthy }
+      marquez: { condition: service_started }
+    environment:
+      BOOTSTRAP_SERVERS: broker:29092
+      SOURCE_TOPIC: mortgage_validated_apps
+      SINK_TOPIC: mortgage_decisions
+      LLM_API_BASE: ${LLM_API_BASE:-https://api.openai.com/v1}
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      LLM_MODEL: ${LLM_MODEL:-gpt-4o-mini}
+      OPENLINEAGE_URL: http://marquez:5000
+      OPENLINEAGE_NAMESPACE: mortgage-lab
+      OPENLINEAGE_JOB_NAME: decision-agent
+    command: ["python", "decision_agent.py"]
+    restart: unless-stopped

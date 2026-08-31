@@ -1,0 +1,31 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint-and-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validar docker-compose.yml
+        run: docker compose config -q
+
+      - name: Validar JSON de conectores
+        run: |
+          python3 -c "import json,glob; [json.load(open(f)) for f in glob.glob('connectors/*.json')]"
+
+      - name: Construir imagen de Flink personalizada
+        run: docker compose build flink-jobmanager
+
+      - name: Construir imagen de los agentes
+        run: docker compose build ai-risk-agent
+
+      - name: Lint de Python (agentes y producer)
+        run: |
+          pip install ruff
+          ruff check agents producer

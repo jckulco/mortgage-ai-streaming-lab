@@ -1,0 +1,22 @@
+{
+  "name": "credit-score-source",
+  "config": {
+    "connector.class": "io.confluent.connect.jdbc.JdbcSourceConnector",
+    "tasks.max": "1",
+    "connection.url": "jdbc:postgresql://postgres-mortgage:5432/mortgage",
+    "connection.user": "postgres",
+    "connection.password": "secretpassword",
+    "mode": "incrementing",
+    "incrementing.column.name": "id",
+    "table.whitelist": "credit_scores",
+    "topic.prefix": "raw-",
+    "poll.interval.ms": "5000",
+    "batch.max.rows": "1000",
+    "key.converter": "org.apache.kafka.connect.storage.StringConverter",
+    "value.converter": "org.apache.kafka.connect.json.JsonConverter",
+    "value.converter.schemas.enable": "false",
+    "transforms": "createKey",
+    "transforms.createKey.type": "org.apache.kafka.connect.transforms.ValueToKey",
+    "transforms.createKey.fields": "applicant_name"
+  }
+}
