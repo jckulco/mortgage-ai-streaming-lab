@@ -22,13 +22,31 @@ from openlineage.client.transport.http import HttpConfig, HttpTransport
 from openlineage.client.run import Dataset, Job, Run, RunEvent, RunState
 
 BOOTSTRAP_SERVERS = os.environ.get("BOOTSTRAP_SERVERS", "broker:29092")
+
+# ── Proveedor de LLM ─────────────────────────────────────────────────────
+# LLM_PROVIDER = "openai_compatible" (default) o "watsonx"
+LLM_PROVIDER = os.environ.get("LLM_PROVIDER", "openai_compatible")
+
+# openai_compatible: cualquier endpoint /v1/chat/completions (OpenAI, Azure
+# vía gateway compatible, Ollama, LM Studio, etc.)
 LLM_API_BASE = os.environ.get("LLM_API_BASE", "https://api.openai.com/v1")
 LLM_API_KEY = os.environ.get("LLM_API_KEY", "")
 LLM_MODEL = os.environ.get("LLM_MODEL", "gpt-4o-mini")
 
+# watsonx.ai: requiere API key de IBM Cloud (para IAM), project_id y model_id
+WATSONX_URL = os.environ.get("WATSONX_URL", "https://us-south.ml.cloud.ibm.com")
+WATSONX_API_KEY = os.environ.get("WATSONX_API_KEY", "")
+WATSONX_PROJECT_ID = os.environ.get("WATSONX_PROJECT_ID", "")
+WATSONX_MODEL_ID = os.environ.get("WATSONX_MODEL_ID", "meta-llama/llama-3-3-70b-instruct")
+WATSONX_VERSION = os.environ.get("WATSONX_VERSION", "2023-05-29")
+
 OPENLINEAGE_URL = os.environ.get("OPENLINEAGE_URL", "http://marquez:5000")
 OPENLINEAGE_NAMESPACE = os.environ.get("OPENLINEAGE_NAMESPACE", "mortgage-lab")
 OPENLINEAGE_JOB_NAME = os.environ.get("OPENLINEAGE_JOB_NAME", "unnamed-agent")
+
+# Cache del token IAM de watsonx (se reusa entre llamadas y se renueva solo
+# cuando está por expirar, en vez de pedir uno nuevo en cada mensaje).
+_watsonx_token_cache = {"token": None, "expires_at": 0}
 
 
 def log(msg: str) -> None:
@@ -60,12 +78,70 @@ def produce_json(producer: Producer, topic: str, key: str, value: dict) -> None:
     producer.flush()
 
 
-def call_llm(system_prompt: str, user_prompt: str) -> str:
+def _get_watsonx_iam_token() -> str:
     """
-    Llama a cualquier endpoint compatible con la API de chat completions de
-    OpenAI (OpenAI, Azure OpenAI vía gateway compatible, watsonx con proxy
-    OpenAI-compatible, Ollama, LM Studio, etc.).
+    Intercambia la API key de IBM Cloud por un token de acceso IAM (Bearer).
+    Los tokens IAM expiran (típicamente ~1 hora); se cachean en memoria y se
+    renuevan automáticamente 60s antes de expirar, para no pedir uno nuevo
+    en cada mensaje procesado por el agente.
     """
+    now = time.time()
+    if _watsonx_token_cache["token"] and now < _watsonx_token_cache["expires_at"] - 60:
+        return _watsonx_token_cache["token"]
+
+    if not WATSONX_API_KEY:
+        raise RuntimeError("WATSONX_API_KEY no está configurado en el entorno.")
+
+    resp = requests.post(
+        "https://iam.cloud.ibm.com/identity/token",
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+        data={
+            "grant_type": "urn:ibm:params:oauth:grant-type:apikey",
+            "apikey": WATSONX_API_KEY,
+        },
+        timeout=30,
+    )
+    resp.raise_for_status()
+    data = resp.json()
+
+    _watsonx_token_cache["token"] = data["access_token"]
+    _watsonx_token_cache["expires_at"] = now + data.get("expires_in", 3600)
+    log("Token IAM de watsonx renovado.")
+    return _watsonx_token_cache["token"]
+
+
+def _call_watsonx(system_prompt: str, user_prompt: str) -> str:
+    if not WATSONX_PROJECT_ID:
+        raise RuntimeError("WATSONX_PROJECT_ID no está configurado en el entorno.")
+
+    token = _get_watsonx_iam_token()
+    url = f"{WATSONX_URL.rstrip('/')}/ml/v1/text/chat?version={WATSONX_VERSION}"
+    headers = {
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+        "Authorization": f"Bearer {token}",
+    }
+    payload = {
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+        "project_id": WATSONX_PROJECT_ID,
+        "model_id": WATSONX_MODEL_ID,
+        "frequency_penalty": 0,
+        "max_tokens": 500,
+        "presence_penalty": 0,
+        "temperature": 0.2,
+        "top_p": 1,
+    }
+
+    resp = requests.post(url, headers=headers, json=payload, timeout=60)
+    resp.raise_for_status()
+    data = resp.json()
+    return data["choices"][0]["message"]["content"]
+
+
+def _call_openai_compatible(system_prompt: str, user_prompt: str) -> str:
     if not LLM_API_KEY and "localhost" not in LLM_API_BASE and "ollama" not in LLM_API_BASE:
         log("ADVERTENCIA: LLM_API_KEY vacío. Configúralo en .env si tu endpoint lo requiere.")
 
@@ -87,6 +163,19 @@ def call_llm(system_prompt: str, user_prompt: str) -> str:
     resp.raise_for_status()
     data = resp.json()
     return data["choices"][0]["message"]["content"]
+
+
+def call_llm(system_prompt: str, user_prompt: str) -> str:
+    """
+    Punto de entrada único usado por los agentes. Despacha al proveedor
+    configurado en LLM_PROVIDER ("watsonx" o "openai_compatible").
+    Ambos devuelven el mismo formato de respuesta (choices[0].message.content),
+    así que el resto del código de los agentes no necesita saber cuál está
+    activo.
+    """
+    if LLM_PROVIDER == "watsonx":
+        return _call_watsonx(system_prompt, user_prompt)
+    return _call_openai_compatible(system_prompt, user_prompt)
 
 
 def parse_json_response(text: str) -> dict:

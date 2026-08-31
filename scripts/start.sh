@@ -13,6 +13,19 @@ fi
 
 mkdir -p data/kafka-data data/connect-plugins data/postgres-mortgage data/marquez-db
 
+# El contenedor de Kafka Connect corre como usuario no-root (uid 1000) y
+# necesita permiso de escritura sobre el directorio de plugins montado desde
+# el host, que Docker suele crear como root si es la primera vez. Sin esto,
+# `confluent-hub install` falla con "componentDir ... not a writeable path"
+# y el contenedor queda reiniciándose en bucle sin nunca pasar el healthcheck.
+if command -v sudo > /dev/null 2>&1; then
+  sudo chown -R 1000:1000 data/connect-plugins 2>/dev/null || \
+    chown -R 1000:1000 data/connect-plugins 2>/dev/null || \
+    chmod -R 777 data/connect-plugins
+else
+  chown -R 1000:1000 data/connect-plugins 2>/dev/null || chmod -R 777 data/connect-plugins
+fi
+
 echo ">> Construyendo imágenes (Flink personalizado + agentes)..."
 docker compose build
 

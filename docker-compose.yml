@@ -364,9 +364,15 @@ services:
       BOOTSTRAP_SERVERS: broker:29092
       SOURCE_TOPIC: enriched_mortgage_applications
       SINK_TOPIC: mortgage_validated_apps
+      LLM_PROVIDER: ${LLM_PROVIDER:-openai_compatible}
       LLM_API_BASE: ${LLM_API_BASE:-https://api.openai.com/v1}
       LLM_API_KEY: ${LLM_API_KEY:-}
       LLM_MODEL: ${LLM_MODEL:-gpt-4o-mini}
+      WATSONX_URL: ${WATSONX_URL:-https://us-south.ml.cloud.ibm.com}
+      WATSONX_API_KEY: ${WATSONX_API_KEY:-}
+      WATSONX_PROJECT_ID: ${WATSONX_PROJECT_ID:-}
+      WATSONX_MODEL_ID: ${WATSONX_MODEL_ID:-meta-llama/llama-3-3-70b-instruct}
+      WATSONX_VERSION: ${WATSONX_VERSION:-2023-05-29}
       OPENLINEAGE_URL: http://marquez:5000
       OPENLINEAGE_NAMESPACE: mortgage-lab
       OPENLINEAGE_JOB_NAME: risk-assessment-agent
@@ -384,9 +390,15 @@ services:
       BOOTSTRAP_SERVERS: broker:29092
       SOURCE_TOPIC: mortgage_validated_apps
       SINK_TOPIC: mortgage_decisions
+      LLM_PROVIDER: ${LLM_PROVIDER:-openai_compatible}
       LLM_API_BASE: ${LLM_API_BASE:-https://api.openai.com/v1}
       LLM_API_KEY: ${LLM_API_KEY:-}
       LLM_MODEL: ${LLM_MODEL:-gpt-4o-mini}
+      WATSONX_URL: ${WATSONX_URL:-https://us-south.ml.cloud.ibm.com}
+      WATSONX_API_KEY: ${WATSONX_API_KEY:-}
+      WATSONX_PROJECT_ID: ${WATSONX_PROJECT_ID:-}
+      WATSONX_MODEL_ID: ${WATSONX_MODEL_ID:-meta-llama/llama-3-3-70b-instruct}
+      WATSONX_VERSION: ${WATSONX_VERSION:-2023-05-29}
       OPENLINEAGE_URL: http://marquez:5000
       OPENLINEAGE_NAMESPACE: mortgage-lab
       OPENLINEAGE_JOB_NAME: decision-agent

@@ -36,8 +36,9 @@ y el razonamiento detrás de cada decisión de diseño.
 
 - Docker Engine 20.10+ y Docker Compose v2
 - ~8 GB RAM libres, 10 GB de disco
-- Una API key de un LLM compatible con `/v1/chat/completions` (OpenAI,
-  Azure OpenAI, watsonx, o un modelo local vía Ollama — ver `.env.example`)
+- Una API key de watsonx.ai (IBM Cloud) **o** de un LLM compatible con
+  `/v1/chat/completions` (OpenAI, Azure OpenAI, Ollama local...) — ver
+  `.env.example`, sección `LLM_PROVIDER`
 - Python 3.9+ (solo para correr `producer/submit_application.py` desde tu
   máquina; no es necesario dentro de los contenedores)
 
@@ -158,6 +159,18 @@ exclusivamente para desarrollo local, pruebas y demos. No lo expongas a
 redes públicas ni lo uses como base directa para producción sin añadir
 las capas de seguridad correspondientes (SASL/SSL, RBAC en Kafbat UI,
 secrets management para las API keys de LLM, etc.).
+
+---
+
+## Solución de problemas
+
+| Síntoma | Causa | Solución |
+|---|---|---|
+| `connect` queda `unhealthy` / reinicia en bucle, log dice `componentDir ... not a writeable path` | `./data/connect-plugins` pertenece a `root` en el host, pero el contenedor corre como uid `1000` | `sudo chown -R 1000:1000 data/connect-plugins && docker compose up -d connect` — `scripts/start.sh` ya lo corrige automáticamente en instalaciones nuevas |
+| `Port XXXX already in use` | Otro proceso usa ese puerto | Cambia el puerto correspondiente en `.env` (`FLINK_UI_PORT`, `KAFKA_UI_PORT`, etc.) |
+| El job de Flink no aparece en la Flink UI | El SQL Client falló silenciosamente | `docker compose exec flink-sql-client bin/sql-client.sh -f /opt/flink/sql-scripts/01-pipeline.sql` manualmente para ver el error completo |
+| Los agentes no producen nada en `mortgage_validated_apps` / `mortgage_decisions` | Falla la llamada al LLM (credenciales, `LLM_PROVIDER` mal configurado) | `docker logs -f ai-risk-agent` — revisa el mensaje de error específico (401, project_id inválido, etc.) |
+| `broker` en `Restarting` en loop | Datos corruptos de un intento anterior | `make clean && make start` (⚠️ borra todos los datos) |
 
 ---
 
