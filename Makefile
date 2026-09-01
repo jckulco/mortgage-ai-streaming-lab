@@ -1,6 +1,7 @@
 .PHONY: help start stop restart status health logs clean pull \
         flink-sql producer topics-list connectors-list marquez-open \
-        iceberg-connector-build iceberg-connectors iceberg-status
+        iceberg-connector-build iceberg-connectors iceberg-status \
+        iceberg-hive-sql iceberg-expose-minio
 
 help:
 	@echo "Comandos disponibles:"
@@ -16,8 +17,10 @@ help:
 	@echo "  make topics-list      - Lista los topics de Kafka"
 	@echo "  make connectors-list  - Lista los conectores de Kafka Connect"
 	@echo "  make iceberg-connector-build - Compila el sink de Iceberg (una vez)"
+	@echo "  make iceberg-expose-minio    - Expone MinIO de watsonx.data (con auto-reinicio)"
 	@echo "  make iceberg-connectors      - Registra/actualiza los sinks Iceberg -> watsonx.data"
 	@echo "  make iceberg-status          - Estado de los conectores Iceberg"
+	@echo "  make iceberg-hive-sql        - Imprime el SQL para consultar desde watsonx.data"
 
 start:
 	bash scripts/start.sh
@@ -65,9 +68,17 @@ iceberg-connector-build:
 	bash scripts/build-iceberg-connector.sh
 	docker compose restart connect
 
+iceberg-expose-minio:
+	bash watsonx-data/scripts/get-iceberg-connection-info.sh
+
 iceberg-connectors:
 	bash scripts/register-iceberg-connectors.sh
 
 iceberg-status:
 	@curl -s http://localhost:$${CONNECT_REST_PORT:-8083}/connectors/iceberg-enriched-sink/status | python3 -m json.tool || true
 	@curl -s http://localhost:$${CONNECT_REST_PORT:-8083}/connectors/iceberg-decisions-sink/status | python3 -m json.tool || true
+
+iceberg-hive-sql:
+	@echo "Copia y pega esto en el Query workspace de watsonx.data (https://localhost:6443):"
+	@echo "---"
+	@cat watsonx-data/sql/create-hive-tables.sql

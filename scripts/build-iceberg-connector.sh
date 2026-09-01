@@ -38,8 +38,8 @@ docker run --rm \
     set -e
     git clone --depth 1 --branch '${ICEBERG_TAG}' https://github.com/apache/iceberg.git /tmp/iceberg
     cd /tmp/iceberg
-    ./gradlew -x test -x integrationTest :iceberg-kafka-connect:kafka-connect-runtime:build --no-daemon
-    cp kafka-connect/kafka-connect-runtime/build/distributions/iceberg-kafka-connect-runtime-*.zip /out/
+    ./gradlew -x test -x integrationTest :iceberg-kafka-connect:iceberg-kafka-connect-runtime:build --no-daemon
+    find . -iname 'iceberg-kafka-connect-runtime-*.zip' -path '*/distributions/*' -exec cp {} /out/ \;
   "
 
 echo ">> Listo: $(ls "${OUT_DIR}"/iceberg-kafka-connect-runtime-*.zip)"

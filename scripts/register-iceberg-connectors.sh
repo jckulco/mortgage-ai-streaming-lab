@@ -7,7 +7,7 @@
 #   1. ICEBERG_ENABLED=true y las demás variables ICEBERG_* en .env
 #   2. El .zip del conector compilado (scripts/build-iceberg-connector.sh)
 #      ya instalado — reinicia el contenedor 'connect' después de compilarlo.
-#   3. HMS y MinIO de watsonx.data expuestos en el host (ver
+#   3. MinIO de watsonx.data expuesto en el host (ver
 #      docs/ICEBERG_WATSONX.md), y el bucket ICEBERG_BUCKET ya creado.
 #
 # Uso:
@@ -21,8 +21,6 @@ if [ -f .env ]; then
 fi
 
 : "${ICEBERG_NAMESPACE:?Falta ICEBERG_NAMESPACE en .env}"
-: "${ICEBERG_HMS_HOST:?Falta ICEBERG_HMS_HOST en .env}"
-: "${ICEBERG_HMS_PORT:?Falta ICEBERG_HMS_PORT en .env}"
 : "${ICEBERG_S3_HOST:?Falta ICEBERG_S3_HOST en .env}"
 : "${ICEBERG_S3_PORT:?Falta ICEBERG_S3_PORT en .env}"
 : "${ICEBERG_BUCKET:?Falta ICEBERG_BUCKET en .env}"

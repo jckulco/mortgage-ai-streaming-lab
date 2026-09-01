@@ -9,9 +9,11 @@
     "iceberg.tables.evolve-schema-enabled": "true",
     "iceberg.tables.upsert-mode-enabled": "false",
 
-    "iceberg.catalog.type": "hive",
-    "iceberg.catalog.uri": "thrift://${ICEBERG_HMS_HOST}:${ICEBERG_HMS_PORT}",
-    "iceberg.catalog.warehouse": "s3a://${ICEBERG_BUCKET}/",
+    "iceberg.catalog.type": "jdbc",
+    "iceberg.catalog.uri": "jdbc:postgresql://postgres-mortgage:5432/mortgage",
+    "iceberg.catalog.jdbc.user": "postgres",
+    "iceberg.catalog.jdbc.password": "secretpassword",
+    "iceberg.catalog.warehouse": "s3a://${ICEBERG_BUCKET}",
     "iceberg.catalog.io-impl": "org.apache.iceberg.aws.s3.S3FileIO",
     "iceberg.catalog.client.region": "us-east-1",
     "iceberg.catalog.s3.endpoint": "http://${ICEBERG_S3_HOST}:${ICEBERG_S3_PORT}",
@@ -22,8 +24,7 @@
     "iceberg.control.topic": "control-iceberg-decisions",
     "iceberg.control.commit.interval-ms": "10000",
 
-    "key.converter": "org.apache.kafka.connect.json.JsonConverter",
-    "key.converter.schemas.enable": "false",
+    "key.converter": "org.apache.kafka.connect.storage.StringConverter",
     "value.converter": "org.apache.kafka.connect.json.JsonConverter",
     "value.converter.schemas.enable": "false"
   }
