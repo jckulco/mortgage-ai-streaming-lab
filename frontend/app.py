@@ -30,6 +30,7 @@ def submit():
     data = request.get_json(force=True)
 
     name = (data.get("name") or "").strip()
+    email = (data.get("email") or "").strip()
     try:
         property_value = float(data.get("property_value"))
         loan_amount = float(data.get("loan_amount"))
@@ -40,8 +41,12 @@ def submit():
     if not name:
         return jsonify({"ok": False, "error": "El nombre completo es obligatorio."}), 400
 
+    if not email or "@" not in email:
+        return jsonify({"ok": False, "error": "El email es obligatorio y debe ser válido."}), 400
+
     payload = {
         "applicant_name": name,
+        "applicant_email": email,
         "property_value": property_value,
         "loan_amount": loan_amount,
         "annual_income": annual_income,

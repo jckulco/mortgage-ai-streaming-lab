@@ -78,6 +78,7 @@ def main() -> None:
 
             output = {
                 "applicant_name": applicant_name,
+                "applicant_email": app.get("applicant_email"),
                 "decision": result.get("decision", "unknown"),
                 "interest_rate": result.get("interest_rate"),
                 "email_body": result.get("email_body", ""),

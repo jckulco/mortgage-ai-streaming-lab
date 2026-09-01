@@ -155,8 +155,14 @@ services:
       JDBC_CONNECTOR_VERSION: ${JDBC_CONNECTOR_VERSION:-10.8.0}
     volumes:
       - connect-plugins:/opt/connect-plugins:z
+      - ./connectors/build:/opt/connectors-build:ro
       - ./scripts/connect-init.sh:/etc/confluent/docker/connect-init.sh:ro
     command: ["bash", "/etc/confluent/docker/connect-init.sh"]
+    extra_hosts:
+      # Permite que Connect llegue al HMS/MinIO de watsonx.data (KIND), que
+      # se expone con 'kubectl port-forward' en el HOST de la VM, no dentro
+      # de mortgage-lab-network. Ver docs/ICEBERG_WATSONX.md.
+      - "host.docker.internal:host-gateway"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8083/connectors"]
       interval: 30s
@@ -394,6 +400,56 @@ services:
     environment:
       BOOTSTRAP_SERVERS: broker:29092
       APPLICATIONS_TOPIC: mortgage_applications
+    restart: unless-stopped
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # Mailpit — servidor SMTP falso para desarrollo. Captura todos los correos
+  # que le enviemos y los muestra en una bandeja web (http://localhost:8025),
+  # sin enviar nada real a Internet. Así probamos las notificaciones de
+  # aprobación/rechazo sin necesitar credenciales de un proveedor real.
+  # ─────────────────────────────────────────────────────────────────────────
+  mailpit:
+    image: axllent/mailpit:latest
+    container_name: mailpit
+    networks: [lab-net]
+    ports:
+      - "${MAILPIT_SMTP_PORT:-1025}:1025"
+      - "${MAILPIT_WEB_PORT:-8025}:8025"
+    environment:
+      MP_MAX_MESSAGES: 500
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8025/readyz"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: '0.5'
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # Agente de notificación: consume 'mortgage_decisions' y envía el email de
+  # aprobación/rechazo redactado por ai-decision-agent, vía Mailpit.
+  # ─────────────────────────────────────────────────────────────────────────
+  ai-email-notifier:
+    build: ./agents
+    container_name: ai-email-notifier
+    networks: [lab-net]
+    depends_on:
+      broker: { condition: service_healthy }
+      mailpit: { condition: service_healthy }
+    environment:
+      BOOTSTRAP_SERVERS: broker:29092
+      SOURCE_TOPIC: mortgage_decisions
+      SMTP_HOST: ${SMTP_HOST:-mailpit}
+      SMTP_PORT: ${SMTP_PORT:-1025}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_USE_TLS: ${SMTP_USE_TLS:-false}
+      EMAIL_FROM: ${EMAIL_FROM:-River Bank <notificaciones@riverbank.demo>}
+    command: ["python", "notifier_agent.py"]
     restart: unless-stopped
 
   ai-decision-agent:
