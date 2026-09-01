@@ -69,6 +69,11 @@ CREATE TABLE IF NOT EXISTS payment_history (
 
 -- ── Sink del enriquecimiento ────────────────────────────────────────────
 -- Equivalente al topic enriched_mortgage_applications del lab original.
+-- Debe ser upsert-kafka (no 'kafka' simple): como credit_scores y
+-- payment_history son tablas upsert-kafka, el resultado del LEFT JOIN es
+-- un stream con updates/deletes (retracciones), no solo inserts. Un sink
+-- 'kafka' normal solo acepta streams append-only y falla con
+-- "doesn't support consuming update and delete changes".
 CREATE TABLE IF NOT EXISTS enriched_mortgage_applications (
     applicant_name  STRING,
     property_value  DOUBLE,
@@ -77,12 +82,14 @@ CREATE TABLE IF NOT EXISTS enriched_mortgage_applications (
     credit_score    INT,
     debt_to_income  DOUBLE,
     on_time_payments INT,
-    late_payments    INT
+    late_payments    INT,
+    PRIMARY KEY (applicant_name) NOT ENFORCED
 ) WITH (
-    'connector' = 'kafka',
+    'connector' = 'upsert-kafka',
     'topic' = 'enriched_mortgage_applications',
     'properties.bootstrap.servers' = 'broker:29092',
-    'format' = 'json'
+    'key.format' = 'json',
+    'value.format' = 'json'
 );
 
 -- ── Job de streaming: doble LEFT JOIN (equivalente a los dos statements

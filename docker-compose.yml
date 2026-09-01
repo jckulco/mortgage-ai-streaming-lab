@@ -379,6 +379,23 @@ services:
     command: ["python", "risk_agent.py"]
     restart: unless-stopped
 
+  # ─────────────────────────────────────────────────────────────────────────
+  # Frontend web: formulario de solicitud de hipoteca (equivalente visual a
+  # la Parte 1 del lab original). Publica al topic mortgage_applications.
+  # ─────────────────────────────────────────────────────────────────────────
+  frontend:
+    build: ./frontend
+    container_name: mortgage-frontend
+    networks: [lab-net]
+    depends_on:
+      broker: { condition: service_healthy }
+    ports:
+      - "${FRONTEND_PORT:-5050}:5050"
+    environment:
+      BOOTSTRAP_SERVERS: broker:29092
+      APPLICATIONS_TOPIC: mortgage_applications
+    restart: unless-stopped
+
   ai-decision-agent:
     build: ./agents
     container_name: ai-decision-agent

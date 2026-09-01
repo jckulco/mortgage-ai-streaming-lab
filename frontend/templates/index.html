@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>River Bank — Solicitud de Hipoteca</title>
+<style>
+  :root {
+    --primary: #5b4fe9;
+    --primary-dark: #4a3fd6;
+    --text: #2d2d3a;
+    --muted: #6b6b7b;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background:
+      linear-gradient(rgba(255,255,255,0.55), rgba(255,255,255,0.55)),
+      url('https://images.unsplash.com/photo-1600607687939-ce8a6c25118c?auto=format&fit=crop&w=1600&q=60')
+      center/cover no-repeat fixed;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 40px 20px;
+  }
+  .card {
+    background: rgba(255, 255, 255, 0.92);
+    backdrop-filter: blur(6px);
+    border-radius: 16px;
+    padding: 48px 56px 56px;
+    max-width: 520px;
+    width: 100%;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.15);
+  }
+  .brand {
+    text-align: center;
+    margin-bottom: 8px;
+  }
+  .brand .logo { font-size: 40px; }
+  .brand h1 {
+    color: var(--primary);
+    margin: 4px 0 2px;
+    font-size: 28px;
+  }
+  .brand p {
+    color: var(--muted);
+    margin: 0 0 24px;
+    font-size: 14px;
+  }
+  h2 {
+    text-align: center;
+    color: var(--text);
+    font-size: 22px;
+    margin: 8px 0 28px;
+  }
+  label {
+    display: block;
+    font-weight: 600;
+    color: var(--text);
+    margin-bottom: 6px;
+    font-size: 14px;
+  }
+  input {
+    width: 100%;
+    padding: 12px 14px;
+    border: 1px solid #e2e2ea;
+    border-radius: 8px;
+    font-size: 15px;
+    margin-bottom: 20px;
+    background: #fafafe;
+  }
+  input:focus {
+    outline: none;
+    border-color: var(--primary);
+    background: #fff;
+  }
+  button {
+    width: 100%;
+    padding: 14px;
+    background: var(--primary);
+    color: white;
+    border: none;
+    border-radius: 8px;
+    font-size: 16px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+  button:hover { background: var(--primary-dark); }
+  button:disabled { background: #a8a3f0; cursor: not-allowed; }
+  #status {
+    margin-top: 18px;
+    padding: 12px 14px;
+    border-radius: 8px;
+    font-size: 14px;
+    display: none;
+  }
+  #status.ok { background: #e6f7ec; color: #1a7a3d; display: block; }
+  #status.err { background: #fdecec; color: #b3261e; display: block; }
+</style>
+</head>
+<body>
+  <div class="card">
+    <div class="brand">
+      <div class="logo">🌍</div>
+      <h1>River Bank</h1>
+      <p>Your Trusted Financial Partner</p>
+    </div>
+    <h2>Mortgage Application</h2>
+
+    <form id="mortgage-form">
+      <label for="name">Full Name</label>
+      <input type="text" id="name" required placeholder="John Doe">
+
+      <label for="property_value">Property Value ($)</label>
+      <input type="number" id="property_value" required min="0" step="1000" placeholder="200000">
+
+      <label for="loan_amount">Loan Amount ($)</label>
+      <input type="number" id="loan_amount" required min="0" step="1000" placeholder="150000">
+
+      <label for="annual_income">Annual Income ($)</label>
+      <input type="number" id="annual_income" required min="0" step="1000" placeholder="500000">
+
+      <button type="submit" id="submit-btn">Submit Application</button>
+    </form>
+
+    <div id="status"></div>
+  </div>
+
+<script>
+const form = document.getElementById('mortgage-form');
+const statusDiv = document.getElementById('status');
+const submitBtn = document.getElementById('submit-btn');
+
+form.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  submitBtn.disabled = true;
+  submitBtn.textContent = 'Enviando...';
+  statusDiv.style.display = 'none';
+
+  const body = {
+    name: document.getElementById('name').value,
+    property_value: document.getElementById('property_value').value,
+    loan_amount: document.getElementById('loan_amount').value,
+    annual_income: document.getElementById('annual_income').value,
+  };
+
+  try {
+    const resp = await fetch('/submit', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const result = await resp.json();
+
+    if (result.ok) {
+      statusDiv.className = 'ok';
+      statusDiv.textContent = '✅ Solicitud enviada. Sigue el progreso en Kafbat UI / Flink UI / Marquez.';
+      form.reset();
+    } else {
+      statusDiv.className = 'err';
+      statusDiv.textContent = '❌ ' + result.error;
+    }
+  } catch (err) {
+    statusDiv.className = 'err';
+    statusDiv.textContent = '❌ No se pudo conectar con el servidor: ' + err.message;
+  } finally {
+    submitBtn.disabled = false;
+    submitBtn.textContent = 'Submit Application';
+    statusDiv.style.display = 'block';
+  }
+});
+</script>
+</body>
+</html>

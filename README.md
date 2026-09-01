@@ -64,6 +64,7 @@ Interfaces disponibles al terminar:
 
 | Interfaz | URL |
 |---|---|
+| **Formulario de solicitud (frontend)** | http://localhost:5050 |
 | Kafbat UI | http://localhost:8080 |
 | Flink UI (jobs en ejecución) | http://localhost:8082 |
 | Marquez (grafo de lineage) | http://localhost:3000 |
@@ -74,6 +75,10 @@ Interfaces disponibles al terminar:
 
 ## Probar el pipeline completo
 
+**Opción A — formulario web** (recomendado): abre http://localhost:5050,
+llena el formulario "Mortgage Application" y presiona **Submit Application**.
+
+**Opción B — línea de comandos**:
 ```bash
 # Envía una solicitud de hipoteca (John Doe ya tiene datos de crédito
 # precargados en Postgres, ver sql/init-mortgage-db.sql)
