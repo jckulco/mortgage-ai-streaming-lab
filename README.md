@@ -26,6 +26,7 @@ open source que puedes correr en tu laptop con `docker compose`.
 | **Marquez + OpenLineage** | Lineage: qué agente de IA tomó qué decisión y con qué datos |
 | **Agentes de IA (Python)** | Evaluación de riesgo y decisión final, vía cualquier LLM compatible con la API de OpenAI |
 | **PostgreSQL** | Fuente de datos de crédito y pagos del ejercicio |
+| **watsonx.data developer edition** *(opcional)* | Lakehouse local (Apache Iceberg) — ver `watsonx-data/README.md` |
 
 Ver [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) para el diagrama completo
 y el razonamiento detrás de cada decisión de diseño.
@@ -145,7 +146,17 @@ mortgage-ai-streaming-lab/
 │   ├── decision_agent.py         # agente 2: decisión final
 │   └── Dockerfile
 ├── producer/
-│   └── submit_application.py     # simula el frontend de solicitud
+│   └── submit_application.py     # simula la solicitud vía CLI (alternativa al frontend)
+├── frontend/
+│   ├── app.py                    # formulario web de solicitud (Flask)
+│   ├── templates/index.html
+│   └── Dockerfile
+├── watsonx-data/                 # OPCIONAL: lakehouse local, ver watsonx-data/README.md
+│   ├── installer/                # coloca aquí el .tar descargado de IBM (no versionado)
+│   └── scripts/
+│       ├── setup-watsonx-data.sh
+│       ├── status-watsonx-data.sh
+│       └── teardown-watsonx-data.sh
 ├── scripts/
 │   ├── start.sh                  # arranque + configuración automática
 │   ├── health-check.sh

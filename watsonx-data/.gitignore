@@ -1,0 +1,7 @@
+# No versionar el instalador (varios GB, y requiere entitlement de IBM
+# para descargarse — cada quien debe obtener el suyo) ni su extracción
+installer/*.tar
+installer/watsonx.data-developer-edition-installer/
+
+# Log del port-forward generado por el script
+port-forward-console.log
