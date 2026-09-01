@@ -64,6 +64,11 @@ docker compose exec -T flink-sql-client bash -c \
 
 echo ">> Job de streaming enviado. Verifícalo en la Flink UI (pestaña Running Jobs)."
 
+if [ "${ICEBERG_ENABLED:-false}" = "true" ]; then
+  echo ">> Registrando conectores sink de Iceberg hacia watsonx.data..."
+  bash scripts/register-iceberg-connectors.sh || true
+fi
+
 cat <<'EOF'
 
 ✅ Stack listo.

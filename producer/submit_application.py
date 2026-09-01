@@ -17,6 +17,7 @@ from confluent_kafka import Producer
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--name", required=True)
+    parser.add_argument("--email", required=True)
     parser.add_argument("--property-value", type=float, required=True)
     parser.add_argument("--loan-amount", type=float, required=True)
     parser.add_argument("--annual-income", type=float, required=True)
@@ -28,6 +29,7 @@ def main() -> None:
 
     payload = {
         "applicant_name": args.name,
+        "applicant_email": args.email,
         "property_value": args.property_value,
         "loan_amount": args.loan_amount,
         "annual_income": args.annual_income,

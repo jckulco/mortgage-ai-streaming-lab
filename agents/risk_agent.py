@@ -80,6 +80,7 @@ def main() -> None:
 
             output = {
                 "applicant_name": applicant_name,
+                "applicant_email": app.get("applicant_email"),
                 "risk_level": result.get("risk_level", "unknown"),
                 "risk_summary": result.get("risk_summary", ""),
             }

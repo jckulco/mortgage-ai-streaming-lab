@@ -30,6 +30,7 @@ SET 'restart-strategy.fixed-delay.delay-interval' = '10 s';
 -- Solicitudes de hipoteca (publicadas por producer/submit_application.py)
 CREATE TABLE IF NOT EXISTS mortgage_applications (
     applicant_name  STRING,
+    applicant_email STRING,
     property_value  DOUBLE,
     loan_amount     DOUBLE,
     annual_income   DOUBLE,
@@ -85,6 +86,7 @@ CREATE TABLE IF NOT EXISTS payment_history (
 -- "doesn't support consuming update and delete changes".
 CREATE TABLE IF NOT EXISTS enriched_mortgage_applications (
     applicant_name  STRING,
+    applicant_email STRING,
     property_value  DOUBLE,
     loan_amount     DOUBLE,
     annual_income   DOUBLE,
@@ -111,6 +113,7 @@ CREATE TABLE IF NOT EXISTS enriched_mortgage_applications (
 INSERT INTO enriched_mortgage_applications
 SELECT
     a.applicant_name,
+    a.applicant_email,
     a.property_value,
     a.loan_amount,
     a.annual_income,
