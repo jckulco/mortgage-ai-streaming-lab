@@ -16,6 +16,15 @@ SET 'sql-client.execution.result-mode' = 'tableau';
 SET 'execution.runtime-mode' = 'streaming';
 SET 'table.exec.sink.not-null-enforcer' = 'DROP';
 
+-- Estrategia de reintentos: sin esto, cualquier falla transitoria al
+-- arrancar (p. ej. una carrera entre la creación automática de un topic y
+-- Flink leyendo su metadata justo después) tumba el job por completo en
+-- vez de reintentar. Con esto, Flink reintenta hasta 5 veces con 10s de
+-- espera entre cada intento antes de darse por vencido.
+SET 'restart-strategy.type' = 'fixed-delay';
+SET 'restart-strategy.fixed-delay.attempts' = '5';
+SET 'restart-strategy.fixed-delay.delay-interval' = '10 s';
+
 -- ── Fuentes ──────────────────────────────────────────────────────────────
 
 -- Solicitudes de hipoteca (publicadas por producer/submit_application.py)

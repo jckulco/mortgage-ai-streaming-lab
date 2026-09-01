@@ -46,6 +46,13 @@ curl -s -X POST -H "Content-Type: application/json" \
   --data @connectors/payment-history-source.json \
   http://localhost:${CONNECT_REST_PORT:-8083}/connectors || true
 
+echo ">> Pre-creando topics de Kafka para evitar carreras con Flink al arrancar..."
+for topic in mortgage_applications mortgage_validated_apps mortgage_decisions; do
+  docker compose exec -T broker kafka-topics --bootstrap-server localhost:9092 \
+    --create --if-not-exists --topic "$topic" --partitions 3 --replication-factor 1 \
+    2>/dev/null || true
+done
+
 echo ">> Esperando a que Flink JobManager esté disponible..."
 until curl -sf http://localhost:${FLINK_UI_PORT:-8082}/overview > /dev/null; do
   sleep 3
