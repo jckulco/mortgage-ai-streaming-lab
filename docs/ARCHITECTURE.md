@@ -38,11 +38,30 @@
                                           ▼
                           ┌───────────────────────────────┐
                           │      mortgage_decisions         │ (topic)
+                          └───────────────┬───────────────┘
+                                          ▼
+                          ┌───────────────────────────────┐
+                          │ ai-email-notifier (Python)      │
+                          └───────────────┬───────────────┘
+                                          ▼
+                          ┌───────────────────────────────┐
+                          │            Mailpit               │ (SMTP falso)
                           └───────────────────────────────┘
 
                 Kafbat UI ─── observa todos los topics/schemas/connectors
                 Marquez  ─── observa el lineage emitido por los agentes IA
                 Flink UI ─── observa el job de enriquecimiento en ejecución
+                Mailpit  ─── bandeja web (http://localhost:8025) con los
+                              correos de aprobación/rechazo, sin salir a
+                              Internet ni requerir credenciales reales
+
+              enriched_mortgage_applications ┐
+              mortgage_decisions             ┴──▶ Kafka Connect (Iceberg sink,
+                                                    catálogo jdbc/Postgres)
+                                                    ──▶ MinIO de watsonx.data
+                                                    developer edition
+                                                    (opcional, ver
+                                                    docs/ICEBERG_WATSONX.md)
 ```
 
 ## Por qué estas decisiones
@@ -94,6 +113,22 @@ lineage en esta demo está en poder ver **qué modelo/versión de agente
 IA tomó cada decisión**, que es justo lo que emiten `risk_agent.py` y
 `decision_agent.py` vía `openlineage-python`.
 
+### Mailpit en vez de un proveedor SMTP real
+
+El `ai-email-notifier` consume `mortgage_decisions` y envía el correo de
+aprobación/rechazo (usando el `email_body` que ya redacta
+`ai-decision-agent`) vía SMTP a **Mailpit**, un servidor SMTP falso que
+corre como un contenedor más dentro del mismo `docker-compose.yml`. Mailpit
+captura cualquier correo enviado y lo muestra en una bandeja web
+(`http://localhost:8025`), sin salir nunca a Internet ni requerir
+credenciales de un proveedor real (Gmail, SES, SendGrid, etc.).
+
+Esto mantiene el lab 100% local y reproducible sin depender de una cuenta de
+correo externa. El código del agente usa `smtplib` (librería estándar de
+Python, sin dependencias nuevas) y las variables `SMTP_HOST`/`SMTP_PORT` en
+`.env` — para apuntar a un SMTP real en lugar de Mailpit, solo hay que
+cambiar esas variables; el código no cambia.
+
 ## Trabajo futuro (ideas para extender el proyecto)
 
 - Añadir el listener `openlineage-flink` al job de enriquecimiento para
@@ -103,7 +138,8 @@ IA tomó cada decisión**, que es justo lo que emiten `risk_agent.py` y
   acercarse aún más a la experiencia de Flink gestionado de Confluent Cloud.
 - Añadir cifrado a nivel de campo para `credit_score` / `debt_to_income`
   (mencionado como buena práctica en el lab original).
-- Envío real del email de decisión (SMTP o un servidor MCP propio) en vez
-  de solo dejar `email_body` en el topic `mortgage_decisions`.
+- Usar un proveedor SMTP real (o un servidor MCP propio) en vez de Mailpit,
+  para notificaciones que de verdad lleguen a una bandeja de entrada externa
+  — es solo cambiar variables en `.env`, ver sección de arriba.
 - Autenticación/TLS en todos los componentes si el repo se usa como base
   para algo más que un lab local.

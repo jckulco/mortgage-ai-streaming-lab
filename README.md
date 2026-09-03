@@ -25,8 +25,9 @@ open source que puedes correr en tu laptop con `docker compose`.
 | **Kafbat UI** | Inspección de topics, schemas, conectores |
 | **Marquez + OpenLineage** | Lineage: qué agente de IA tomó qué decisión y con qué datos |
 | **Agentes de IA (Python)** | Evaluación de riesgo y decisión final, vía cualquier LLM compatible con la API de OpenAI |
-| **PostgreSQL** | Fuente de datos de crédito y pagos del ejercicio |
-| **watsonx.data developer edition** *(opcional)* | Lakehouse local (Apache Iceberg) — ver `watsonx-data/README.md` |
+| **ai-email-notifier + Mailpit** | Notificación por email de la decisión (aprobado/rechazado), simulada 100% local — bandeja web en `http://localhost:8025`, sin salir a Internet |
+| **PostgreSQL** | Fuente de datos de crédito y pagos del ejercicio; también respalda el catálogo Iceberg cuando se activa la integración con watsonx.data |
+| **watsonx.data developer edition** *(opcional)* | Lakehouse local (Apache Iceberg) — ver `watsonx-data/README.md` y `docs/ICEBERG_WATSONX.md` |
 
 Ver [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) para el diagrama completo
 y el razonamiento detrás de cada decisión de diseño.
@@ -69,6 +70,7 @@ Interfaces disponibles al terminar:
 | Kafbat UI | http://localhost:8080 |
 | Flink UI (jobs en ejecución) | http://localhost:8082 |
 | Marquez (grafo de lineage) | http://localhost:3000 |
+| Mailpit (bandeja de correos simulados) | http://localhost:8025 |
 | Schema Registry | http://localhost:8081 |
 | Kafka Connect REST | http://localhost:8083 |
 
@@ -87,6 +89,7 @@ make producer
 
 # O manualmente con otro solicitante:
 python3 producer/submit_application.py --name "Emmet Wisoky" \
+  --email "emmet.wisoky@example.com" \
   --property-value 180000 --loan-amount 160000 --annual-income 75000
 ```
 
@@ -95,6 +98,7 @@ En unos segundos:
 ```bash
 docker logs -f ai-risk-agent       # ves la evaluación de riesgo
 docker logs -f ai-decision-agent   # ves la decisión final
+docker logs -f ai-email-notifier   # ves el envío del correo simulado
 ```
 
 O revisa visualmente:
@@ -102,6 +106,9 @@ O revisa visualmente:
 - **Flink UI** → Running Jobs → el job de enriquecimiento en vivo
 - **Marquez** → Namespace `mortgage-lab` → grafo con `risk-assessment-agent`
   y `decision-agent` como nodos, con los topics de entrada/salida de cada uno
+- **Mailpit** (http://localhost:8025) → el correo de aprobación/rechazo
+  dirigido al email del solicitante, con el asunto y cuerpo redactados por
+  el LLM en `ai-decision-agent`
 
 ---
 
@@ -127,7 +134,7 @@ topics de salida de los agentes directamente en SQL.
 
 ```
 mortgage-ai-streaming-lab/
-├── docker-compose.yml            # stack completo
+├── docker-compose.yml            # stack completo (incluye Mailpit)
 ├── .env.example                  # plantilla de configuración
 ├── Makefile                      # comandos rápidos
 ├── flink/
@@ -137,32 +144,41 @@ mortgage-ai-streaming-lab/
 │   └── 02-inspect.sql            # queries manuales de inspección
 ├── connectors/
 │   ├── credit-score-source.json
-│   └── payment-history-source.json
+│   ├── payment-history-source.json
+│   ├── iceberg-enriched-sink.json.template   # OPCIONAL: ver docs/ICEBERG_WATSONX.md
+│   └── iceberg-decisions-sink.json.template  # OPCIONAL: ídem
 ├── sql/
 │   └── init-mortgage-db.sql      # datos de ejemplo (credit_scores, payment_history)
 ├── agents/
 │   ├── common.py                 # cliente Kafka + LLM + emisor OpenLineage
 │   ├── risk_agent.py             # agente 1: evaluación de riesgo
 │   ├── decision_agent.py         # agente 2: decisión final
+│   ├── notifier_agent.py         # agente 3: envía el email de decisión (vía Mailpit)
 │   └── Dockerfile
 ├── producer/
 │   └── submit_application.py     # simula la solicitud vía CLI (alternativa al frontend)
 ├── frontend/
-│   ├── app.py                    # formulario web de solicitud (Flask)
+│   ├── app.py                    # formulario web de solicitud (Flask, incluye campo Email)
 │   ├── templates/index.html
 │   └── Dockerfile
 ├── watsonx-data/                 # OPCIONAL: lakehouse local, ver watsonx-data/README.md
 │   ├── installer/                # coloca aquí el .tar descargado de IBM (no versionado)
+│   ├── sql/
+│   │   └── create-hive-tables.sql   # SQL para consultar Iceberg desde watsonx.data
 │   └── scripts/
 │       ├── setup-watsonx-data.sh
 │       ├── status-watsonx-data.sh
-│       └── teardown-watsonx-data.sh
+│       ├── teardown-watsonx-data.sh
+│       └── get-iceberg-connection-info.sh   # expone MinIO con auto-reinicio
 ├── scripts/
 │   ├── start.sh                  # arranque + configuración automática
 │   ├── health-check.sh
-│   └── connect-init.sh
+│   ├── connect-init.sh
+│   ├── build-iceberg-connector.sh   # OPCIONAL: compila el sink Iceberg
+│   └── register-iceberg-connectors.sh   # OPCIONAL: registra los sinks Iceberg
 ├── docs/
-│   └── ARCHITECTURE.md           # diagrama y decisiones de diseño
+│   ├── ARCHITECTURE.md           # diagrama y decisiones de diseño
+│   └── ICEBERG_WATSONX.md        # integración opcional con watsonx.data developer edition
 └── .github/workflows/ci.yml      # valida compose, JSON y build de imágenes
 ```
 
@@ -192,6 +208,7 @@ secrets management para las API keys de LLM, etc.).
 | El job de Flink no aparece en la Flink UI | El SQL Client falló silenciosamente | `docker compose exec flink-sql-client bin/sql-client.sh -f /opt/flink/sql-scripts/01-pipeline.sql` manualmente para ver el error completo, o consulta la excepción vía REST: `curl -s http://localhost:8082/jobs/<jid>/exceptions \| python3 -m json.tool` |
 | Los agentes no producen nada en `mortgage_validated_apps` / `mortgage_decisions` | Falla la llamada al LLM (credenciales, `LLM_PROVIDER` mal configurado) | `docker logs -f ai-risk-agent` — revisa el mensaje de error específico (401, project_id inválido, etc.) |
 | `broker` en `Restarting` en loop | Datos corruptos de un intento anterior | `make clean && make start` (⚠️ borra todos los datos) |
+| No llega el correo a Mailpit aunque la decisión sí aparece en `mortgage_decisions` | Falta `applicant_email` en el mensaje (formularios/CLI viejos sin ese campo), o `ai-email-notifier` no está corriendo | `docker logs -f ai-email-notifier` — si dice "sin applicant_email en el mensaje", reenvía la solicitud incluyendo `--email` (CLI) o el campo Email (formulario); confirma también `docker compose ps mailpit ai-email-notifier` |
 
 ---
 
